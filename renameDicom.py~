@@ -1,4 +1,5 @@
 #!/usr/bin/python
+
 #  Python code to rename dicom files sent from any scanner
 #  Adapted from renameDicom.pl
 #  Created to allow for great portability and flexibility between scanners
@@ -34,6 +35,15 @@ from optparse import OptionParser, Option, OptionValueError
 program_name = 'renameDicom.py'
 
 # Defining dcm header names and tags
+lut_tag  = {}
+lut_tag['StudyDate'] = '0008,0020'
+#lut_tag['StudyTime'] = '0008,0030'
+lut_tag['SeriesNum'] = '0020,0011'
+#lut_tag['StudyDescription'] = '0008,1030'
+#lut_tag['ProtocolName'] = '0018,1030'
+lut_tag['InstanceNumber'] = '0020,0013'
+lut_tag['SeriesDescription'] = '0008,103e'
+lut_tag['PatientsName'] = '0010,0010'
 
 # What characters are valid in a file name?
 # Anything not in this group is removed
@@ -61,7 +71,7 @@ def load_lut_list(fname_lut_list):
     file_lut_list = open(fname_lut_list,'r')
     for line_dcm in file_lut_list:
 		if line_dcm[0]!="#":
-			lut_tag[line_dcm.split(':')[0].strip(' ')] = line_dcm.split(':')[1].strip(' ').strip('\n')
+			lut_tag[line_dcm.split(':')[0].strip(' ')] = line_dcm.split(':')[1].strip(' ')
     return lut_tag
 
         
@@ -69,22 +79,14 @@ if __name__ == '__main__' :
     usage = "Usage: "+program_name+" <options> dir_input fname_dcm dir_output\n"+\
             "   or  "+program_name+" -help\n" +\
             " For directories use: \n" +\
-            " for file in <dir>; do renameDicom.py . ${file} <dir_output>; done \n\n" +\
-            " For directory formats, seperate fields by '-'\n" +\
-            " For directory formats, use # before fields to specify zero padding to that number of digits\n" 
+            " for file in <dir>; do renameDicom.py . ${file} <dir_output>; done"
     parser = OptionParser(usage)
     parser.add_option("-c","--clobber", action="store_true", dest="clobber",
                         default=0, help="overwrite output file")
     parser.add_option("-a","--anon", action="store_true", dest="anon",
                         default=0, help="make dicom anonymous")
-    parser.add_option("--cfg_anon", type="string", dest="fname_cfg",
-                        default="DcmServer.cfg", help="List of fields to wipe [default = %default]")
-    parser.add_option("--cfg_hdr", type="string", dest="fname_cfg_hdr",
-                        default="renameDicom.cfg", help="List of fields to wipe [default = %default]")
-    parser.add_option("--fmt_base", type="string", dest="format_base",
-                        default="StudyDate-PatientName", help="Directory format of base directory [default = %default]")
-    parser.add_option("--fmt_series", type="string", dest="format_series",
-                        default="###SeriesNum-SeriesDescription", help="Directory format of series directories [default = %default]")
+    parser.add_option("--cfg", type="string", dest="fname_cfg",
+                        default="DcmServer.cfg", help="List of fields to wipe [default = DcmServer.cfg]")
     parser.add_option("-m","--move", action="store_true", dest="move",
                         default=0, help="move instead of copy")
     parser.add_option("-v","--verbose", action="store_true", dest="verbose",
@@ -124,10 +126,6 @@ if __name__ == '__main__' :
     else:
         scanner_type = 'other'
 
-    # Lod lut_tag - what header values we care about
-    lut_tag = load_lut_list(options.fname_cfg_hdr)
-    #print lut_tag
-    
     for tag_name in lut_tag:
         # Dump dcmheader and grap header line
         cmd_dcmdump = 'dcmdump %s/%s | grep %s' % (dir_input, fname_dcm, lut_tag[tag_name])
@@ -137,32 +135,22 @@ if __name__ == '__main__' :
                 if not line=='' and line.find('[0]') == -1:     # Ignore all lines without 'real' instance information
                     output = line
 #	print tag_name
-        if len(output)==0:                                  # ERROR CHECKING for missing DICOM
-            tag_value = "NoTag"
-        elif output.find("(no value available)")<0:           # ERROR CHECKING FOR EMPTY FIELDS
-            tag_value = output.split('[')[1].split(']')[0]    # Grab value between [ ]
-            # Initial replacing of bad characters into useful partitions
-            tag_value = tag_value.replace(' ','-')   # replace spaces with -  12/05/30 - WL - Custom
-            tag_value = tag_value.replace('.','-')   # replace . with -       12/05/30 - WL - Custom
-            tag_value = tag_value.replace('/','-')   # replace / with -
-            tag_value = tag_value.replace('\'','-')   # replace \ with -
-            tag_value = tag_value.replace('*','s')   # replace * with s
-            tag_value = tag_value.replace('?','q')   # replace ? with q
-            tag_value = ''.join(c for c in tag_value if c in valid_chars) # scrub bad characters
-        else:
-            tag_value = "EmptyTag"
+        tag_value = output.split('[')[1].split(']')[0]    # Grab value between [ ]
+        # Initial replacing of bad characters into useful partitions
+        tag_value = tag_value.replace(' ','-')   # replace spaces with -  12/05/30 - WL - Custom
+        tag_value = tag_value.replace('.','-')   # replace . with -       12/05/30 - WL - Custom
+        tag_value = tag_value.replace('/','-')   # replace / with -
+        tag_value = tag_value.replace('\'','-')   # replace \ with -
+        tag_value = tag_value.replace('*','s')   # replace * with s
+        tag_value = tag_value.replace('?','q')   # replace ? with q
+        tag_value = ''.join(c for c in tag_value if c in valid_chars) # scrub bad characters
         lut_value[tag_name] = tag_value
+#        print tag_name + ' = ' , tag_value
     
     # Creating output directories and namesq
-    dir_base = ""
-    for field in options.format_base.split('-'):
-        zeropad = 1+field.rfind("#")
-        if zeropad==0:
-            dir_base = '%s-%s' % (dir_base,lut_value[field])
-        else:
-            field = field[zeropad:]
-            dir_base = '%s-%0*d' % (dir_series,zeropad,int(lut_value[field]))
-    dir_base = dir_base[1:]
+		# 12/05/30 - WL - Custom
+    dir_base = '%s_%s' % \
+        (lut_value['StudyDate'], lut_value['PatientsName']) 
 
     dir_base_full = '%s/%s' % (dir_output,dir_base)
 
@@ -170,17 +158,7 @@ if __name__ == '__main__' :
         cmd_mkdir = 'mkdir %s/%s' % (dir_output, dir_base)
         output, errors = run_cmd(cmd_mkdir, options.debug, options.verbose)
 
-#    dir_series = '%03.d-%s' % (int(lut_value['SeriesNum']), lut_value['SeriesDescription'])
-    dir_series = ""
-    for field in options.format_series.split('-'):
-        zeropad = 1+field.rfind("#")
-        if zeropad==0:
-            dir_series = '%s-%s' % (dir_series,lut_value[field])
-        else:
-            field = field[zeropad:]
-            dir_series = '%s-%0*d' % (dir_series,zeropad,int(lut_value[field]))
-    dir_series = dir_series[1:]
-
+    dir_series = '%03.d-%s' % (int(lut_value['SeriesNum']), lut_value['SeriesDescription'])
     dir_series_full = '%s\%s' % (dir_base_full, dir_series)
     if not os.path.exists(dir_series_full):
         cmd_mkdir = 'mkdir %s/%s/%s' % (dir_output, dir_base, dir_series)
@@ -188,8 +166,13 @@ if __name__ == '__main__' :
 
         
     # iterative process to determine file name
-    fname_out = '%04.d' % (int(lut_value['InstanceNumber']))
-    extension = options.extension
+    if lut_value['ProtocolName'] == 'Phoenix_Document':
+        fname_out = 'Series_%s' % (int(lut_value['InstanceNumber']),)
+        extension = 'SR'
+    else:
+	# 12/05/30 - WL - Custom 
+        fname_out = '%04.d' % (int(lut_value['InstanceNumber']))
+        extension = options.extension
         
     full_out = '%s/%s/%s/%s.%s' % (dir_output, dir_base, dir_series, fname_out, extension)
     
