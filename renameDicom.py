@@ -68,7 +68,7 @@ def run_cmd(sys_cmd, debug, verbose):
 
 def get_tag_value(dir_input, fname_dcm, tag_name):
     # Dump dcmheader and grap header line
-    cmd_dcmdump = 'dcmdump %s/%s | grep %s' % (dir_input, fname_dcm, tag_name)
+    cmd_dcmdump = "dcmdump %s/%s | grep -w %s" % (dir_input, fname_dcm, tag_name)
     output, errors = run_cmd(cmd_dcmdump, 0, 0)
     if scanner_type == 'philips' and tag_name=='InstanceNumber':    # Check if Philips type dicom and looking for InstanceNumber
         for line in output.split('\n'):    # split output into separate lines
