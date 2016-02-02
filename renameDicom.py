@@ -52,19 +52,45 @@ def run_cmd(sys_cmd, debug, verbose):
     else:
         return '','' 
 
-def load_lut_list(fname_lut_list):
-    lut_tag={}
-#   Loads list of dicom headers to read
-    if not os.path.exists(fname_lut_list):
-        raise SystemExit, 'ERROR - Parameter File - File not found: %s' % (fname_lut_list,) 
+# 16-02-02 - WL - Deprecated no config file needed anymore
+# def load_lut_list(fname_lut_list):
+    # lut_tag={}
+# #   Loads list of dicom headers to read
+    # if not os.path.exists(fname_lut_list):
+        # raise SystemExit, 'ERROR - Parameter File - File not found: %s' % (fname_lut_list,) 
         
-    file_lut_list = open(fname_lut_list,'r')
-    for line_dcm in file_lut_list:
-		if line_dcm[0]!="#":
-			lut_tag[line_dcm.split(':')[0].strip(' ')] = line_dcm.split(':')[1].strip(' ').strip('\n')
-    return lut_tag
+    # file_lut_list = open(fname_lut_list,'r')
+    # for line_dcm in file_lut_list:
+		# if line_dcm[0]!="#":
+			# lut_tag[line_dcm.split(':')[0].strip(' ')] = line_dcm.split(':')[1].strip(' ').strip('\n')
+    # return lut_tag
 
-        
+
+def get_tag_value(dir_input, fname_dcm, tag_name):
+    # Dump dcmheader and grap header line
+    cmd_dcmdump = 'dcmdump %s/%s | grep %s' % (dir_input, fname_dcm, tag_name)
+    output, errors = run_cmd(cmd_dcmdump, 0, 0)
+    if scanner_type == 'philips' and tag_name=='InstanceNumber':    # Check if Philips type dicom and looking for InstanceNumber
+        for line in output.split('\n'):    # split output into separate lines
+            if not line=='' and line.find('[0]') == -1:     # Ignore all lines without 'real' instance information
+                output = line
+#	print tag_name
+    if len(output)==0:                                  # ERROR CHECKING for missing DICOM
+        tag_value = "No" + tag_name
+    elif output.find("(no value available)")<0:           # ERROR CHECKING FOR EMPTY FIELDS
+        tag_value = output.split('[')[1].split(']')[0]    # Grab value between [ ]
+        # Initial replacing of bad characters into useful partitions
+        tag_value = tag_value.replace(' ','-')   # replace spaces with -  12/05/30 - WL - Custom
+        tag_value = tag_value.replace('.','-')   # replace . with -       12/05/30 - WL - Custom
+        tag_value = tag_value.replace('/','-')   # replace / with -
+        tag_value = tag_value.replace('\'','-')   # replace \ with -
+        tag_value = tag_value.replace('*','s')   # replace * with s
+        tag_value = tag_value.replace('?','q')   # replace ? with q
+        tag_value = ''.join(c for c in tag_value if c in valid_chars) # scrub bad characters
+    else:
+        tag_value = "Empty" + tag_name
+    return tag_value
+            
 if __name__ == '__main__' :
     usage = "Usage: "+program_name+" <options> dir_input fname_dcm dir_output\n"+\
             "   or  "+program_name+" -help\n" +\
@@ -79,8 +105,8 @@ if __name__ == '__main__' :
                         default=0, help="make dicom anonymous")
     parser.add_option("--cfg_anon", type="string", dest="fname_cfg",
                         default="DcmServer.cfg", help="List of fields to wipe [default = %default]")
-    parser.add_option("--cfg_hdr", type="string", dest="fname_cfg_hdr",
-                        default="renameDicom.cfg", help="List of fields to wipe [default = %default]")
+#    parser.add_option("--cfg_hdr", type="string", dest="fname_cfg_hdr",
+#                        default="renameDicom.cfg", help="List of fields to wipe [default = %default]")
     parser.add_option("--fmt_base", type="string", dest="format_base",
                         default="StudyDate-PatientName", help="Directory format of base directory [default = %default]")
     parser.add_option("--fmt_series", type="string", dest="format_series",
@@ -124,44 +150,17 @@ if __name__ == '__main__' :
     else:
         scanner_type = 'other'
 
-    # Lod lut_tag - what header values we care about
-    lut_tag = load_lut_list(options.fname_cfg_hdr)
-    #print lut_tag
-    
-    for tag_name in lut_tag:
-        # Dump dcmheader and grap header line
-        cmd_dcmdump = 'dcmdump %s/%s | grep %s' % (dir_input, fname_dcm, lut_tag[tag_name])
-        output, errors = run_cmd(cmd_dcmdump, 0, 0)
-        if scanner_type == 'philips' and tag_name=='InstanceNumber':    # Check if Philips type dicom and looking for InstanceNumber
-            for line in output.split('\n'):    # split output into separate lines
-                if not line=='' and line.find('[0]') == -1:     # Ignore all lines without 'real' instance information
-                    output = line
-#	print tag_name
-        if len(output)==0:                                  # ERROR CHECKING for missing DICOM
-            tag_value = "NoTag"
-        elif output.find("(no value available)")<0:           # ERROR CHECKING FOR EMPTY FIELDS
-            tag_value = output.split('[')[1].split(']')[0]    # Grab value between [ ]
-            # Initial replacing of bad characters into useful partitions
-            tag_value = tag_value.replace(' ','-')   # replace spaces with -  12/05/30 - WL - Custom
-            tag_value = tag_value.replace('.','-')   # replace . with -       12/05/30 - WL - Custom
-            tag_value = tag_value.replace('/','-')   # replace / with -
-            tag_value = tag_value.replace('\'','-')   # replace \ with -
-            tag_value = tag_value.replace('*','s')   # replace * with s
-            tag_value = tag_value.replace('?','q')   # replace ? with q
-            tag_value = ''.join(c for c in tag_value if c in valid_chars) # scrub bad characters
-        else:
-            tag_value = "EmptyTag"
-        lut_value[tag_name] = tag_value
-    
     # Creating output directories and namesq
     dir_base = ""
     for field in options.format_base.split('-'):
         zeropad = 1+field.rfind("#")
         if zeropad==0:
-            dir_base = '%s-%s' % (dir_base,lut_value[field])
+            curr_tag_value = get_tag_value(dir_input, fname_dcm, field)
+            dir_base = '%s-%s' % (dir_base,curr_tag_value)
         else:
             field = field[zeropad:]
-            dir_base = '%s-%0*d' % (dir_series,zeropad,int(lut_value[field]))
+            curr_tag_value = get_tag_value(dir_input, fname_dcm, field)
+            dir_base = '%s-%0*d' % (dir_series,zeropad,int(curr_tag_value))
     dir_base = dir_base[1:]
 
     dir_base_full = '%s/%s' % (dir_output,dir_base)
@@ -175,10 +174,12 @@ if __name__ == '__main__' :
     for field in options.format_series.split('-'):
         zeropad = 1+field.rfind("#")
         if zeropad==0:
-            dir_series = '%s-%s' % (dir_series,lut_value[field])
+            curr_tag_value = get_tag_value(dir_input, fname_dcm, field)
+            dir_series = '%s-%s' % (dir_series,curr_tag_value)
         else:
             field = field[zeropad:]
-            dir_series = '%s-%0*d' % (dir_series,zeropad,int(lut_value[field]))
+            curr_tag_value = get_tag_value(dir_input, fname_dcm, field)
+            dir_series = '%s-%0*d' % (dir_series,zeropad,int(curr_tag_value))
     dir_series = dir_series[1:]
 
     dir_series_full = '%s\%s' % (dir_base_full, dir_series)
@@ -188,7 +189,8 @@ if __name__ == '__main__' :
 
         
     # iterative process to determine file name
-    fname_out = '%04.d' % (int(lut_value['InstanceNumber']))
+    curr_tag_value = get_tag_value(dir_input, fname_dcm, 'InstanceNumber')
+    fname_out = '%04.d' % (int(curr_tag_value))
     extension = options.extension
         
     full_out = '%s/%s/%s/%s.%s' % (dir_output, dir_base, dir_series, fname_out, extension)
