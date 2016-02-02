@@ -66,7 +66,7 @@ def run_cmd(sys_cmd, debug, verbose):
     # return lut_tag
 
 
-def get_tag_value(dir_input, fname_dcm, tag_name):
+def get_tag_value(dir_input, fname_dcm, tag_name,options):
     # Dump dcmheader and grap header line
     cmd_dcmdump = "dcmdump %s/%s | grep -w %s" % (dir_input, fname_dcm, tag_name)
     output, errors = run_cmd(cmd_dcmdump, 0, 0)
@@ -74,7 +74,8 @@ def get_tag_value(dir_input, fname_dcm, tag_name):
         for line in output.split('\n'):    # split output into separate lines
             if not line=='' and line.find('[0]') == -1:     # Ignore all lines without 'real' instance information
                 output = line
-#	print tag_name
+    if options.verbose:
+        print tag_name
     if len(output)==0:                                  # ERROR CHECKING for missing DICOM
         tag_value = "No" + tag_name
     elif output.find("(no value available)")<0:           # ERROR CHECKING FOR EMPTY FIELDS
@@ -110,7 +111,7 @@ if __name__ == '__main__' :
     parser.add_option("--fmt_base", type="string", dest="format_base",
                         default="StudyDate-PatientName", help="Directory format of base directory [default = %default]")
     parser.add_option("--fmt_series", type="string", dest="format_series",
-                        default="###SeriesNum-SeriesDescription", help="Directory format of series directories [default = %default]")
+                        default="###SeriesNumber-SeriesDescription", help="Directory format of series directories [default = %default]")
     parser.add_option("-m","--move", action="store_true", dest="move",
                         default=0, help="move instead of copy")
     parser.add_option("-v","--verbose", action="store_true", dest="verbose",
@@ -155,11 +156,11 @@ if __name__ == '__main__' :
     for field in options.format_base.split('-'):
         zeropad = 1+field.rfind("#")
         if zeropad==0:
-            curr_tag_value = get_tag_value(dir_input, fname_dcm, field)
+            curr_tag_value = get_tag_value(dir_input, fname_dcm, field, options)
             dir_base = '%s-%s' % (dir_base,curr_tag_value)
         else:
             field = field[zeropad:]
-            curr_tag_value = get_tag_value(dir_input, fname_dcm, field)
+            curr_tag_value = get_tag_value(dir_input, fname_dcm, field,options)
             dir_base = '%s-%0*d' % (dir_series,zeropad,int(curr_tag_value))
     dir_base = dir_base[1:]
 
@@ -174,11 +175,11 @@ if __name__ == '__main__' :
     for field in options.format_series.split('-'):
         zeropad = 1+field.rfind("#")
         if zeropad==0:
-            curr_tag_value = get_tag_value(dir_input, fname_dcm, field)
+            curr_tag_value = get_tag_value(dir_input, fname_dcm, field, options)
             dir_series = '%s-%s' % (dir_series,curr_tag_value)
         else:
             field = field[zeropad:]
-            curr_tag_value = get_tag_value(dir_input, fname_dcm, field)
+            curr_tag_value = get_tag_value(dir_input, fname_dcm, field,options)
             dir_series = '%s-%0*d' % (dir_series,zeropad,int(curr_tag_value))
     dir_series = dir_series[1:]
 
@@ -189,7 +190,7 @@ if __name__ == '__main__' :
 
         
     # iterative process to determine file name
-    curr_tag_value = get_tag_value(dir_input, fname_dcm, 'InstanceNumber')
+    curr_tag_value = get_tag_value(dir_input, fname_dcm, 'InstanceNumber',options)
     fname_out = '%04.d' % (int(curr_tag_value))
     extension = options.extension
         
